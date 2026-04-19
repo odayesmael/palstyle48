@@ -81,8 +81,20 @@ async function processCustomer(customerData) {
   const normPhone = normalizePhone(phone)
   let existingCustomer = null
 
+  // 0. Strongest Match: Try to find by Exact Platform ID
+  if (platformId && source) {
+    existingCustomer = await prisma.customer.findFirst({
+      where: {
+        platformIds: {
+          path: [source],
+          equals: platformId
+        }
+      }
+    })
+  }
+
   // 1. Try to find by Email exact match
-  if (email) {
+  if (!existingCustomer && email) {
     existingCustomer = await prisma.customer.findFirst({
       where: { email: { equals: email, mode: 'insensitive' } }
     })
