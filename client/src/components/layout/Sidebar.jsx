@@ -85,7 +85,15 @@ export default function Sidebar({ collapsed, onToggle }) {
 
       {/* ─── Navigation ───────────────────────────────────────────────────── */}
       <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto">
-        {NAV_ITEMS.filter(item => !item.adminOnly || user?.role === 'admin').map(({ to, icon: Icon, labelEn, badge }) => (
+        {NAV_ITEMS.filter((item) => {
+          if (user?.role === 'admin') return true
+          if (item.adminOnly) return false
+          
+          const pKey = item.to.replace('/', '')
+          if (user?.permissions && user.permissions[pKey] === false) return false
+          if (user?.permissions && user.permissions[pKey] === undefined) return false
+          return true
+        }).map(({ to, icon: Icon, labelEn, badge }) => (
           <NavLink
             key={to}
             to={to}
