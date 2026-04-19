@@ -1,0 +1,9 @@
+version: "3"
+tunnels:
+  palstyle48:
+    proto: http
+    addr: 3001
+    domain: scorch-deduce-scholar.ngrok-free.app
+    request_header:
+      add:
+        - "ngrok-skip-browser-warning: true"

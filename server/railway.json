@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "npx prisma generate && node -e \"const{PrismaClient}=require('@prisma/client');const bcrypt=require('bcryptjs');const prisma=new PrismaClient();bcrypt.hash('CHANGE_ME_ON_FIRST_LOGIN',12).then(h=>prisma.user.upsert({where:{email:'admin@palstyle48.com'},update:{password:h,loginAttempts:0,lockUntil:null},create:{email:'admin@palstyle48.com',password:h,name:'Admin palstyle48',role:'admin'}})).then(u=>{console.log('[Boot] Admin ready:',u.email);return prisma.$disconnect();}).catch(e=>{console.error('[Boot] Admin reset failed:',e.message);process.exit(1);})\" && node src/index.js",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+}

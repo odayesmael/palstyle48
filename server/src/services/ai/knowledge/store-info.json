@@ -1,0 +1,19 @@
+{
+  "name": "palstyle48",
+  "tagline": "أزياء عصرية لكل مناسبة",
+  "description": "متجر ملابس متخصص في الأزياء النسائية والرجالية العصرية بأسعار منافسة",
+  "website": "https://pls-dev.myshopify.com",
+  "trendyol_store": "https://www.trendyol.com/magaza/palstyle48",
+  "working_hours": "الأحد - الخميس: 9 صباحاً - 10 مساءً، الجمعة - السبت: 11 صباحاً - 11 مساءً",
+  "contact": {
+    "whatsapp": "+905xxxxxxxxx",
+    "email": "support@palstyle48.com",
+    "instagram": "@palstyle48"
+  },
+  "currency": {
+    "primary": "USD",
+    "secondary": "TRY"
+  },
+  "payment_methods": ["بطاقة ائتمان", "PayPal", "تحويل بنكي"],
+  "available_countries": ["الأردن", "فلسطين", "لبنان", "السعودية", "الإمارات", "تركيا", "جميع الدول عبر الشحن الدولي"]
+}
