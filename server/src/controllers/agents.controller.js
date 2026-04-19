@@ -2,21 +2,21 @@
 const prisma = require('../lib/prisma')
 
 const AGENT_META = {
-  master:    { displayName: 'المايسترو',       icon: '🎯', description: 'الإيجنت الرئيسي — يتحكم بالكل ويتواصل مع المدير', isMaster: true },
-  crm:       { displayName: 'إيجنت العملاء',  icon: '👥', description: 'تتبع وتحليل وتصنيف العملاء تلقائياً' },
-  inbox:     { displayName: 'إيجنت الرسائل', icon: '💬', description: 'الرد على رسائل العملاء وتصنيفها' },
-  content:   { displayName: 'إيجنت المحتوى', icon: '✍️', description: 'إنشاء ونشر وتحليل المحتوى' },
-  ads:       { displayName: 'إيجنت الإعلانات', icon: '📢', description: 'مراقبة وتحسين الحملات الإعلانية' },
-  finance:   { displayName: 'إيجنت المالية',  icon: '💰', description: 'تتبع الإيرادات والمصاريف والتقارير المالية' },
-  inventory: { displayName: 'إيجنت المخزون', icon: '📦', description: 'مراقبة ومزامنة المخزون بين المنصات' },
+  master:    { displayName: 'Maestro',       icon: '🎯', description: 'Main Agent — Controls everything and communicates with Admin', isMaster: true },
+  crm:       { displayName: 'Customer Agent',icon: '👥', description: 'Automatically track, analyze, and segment customers' },
+  inbox:     { displayName: 'Messaging Agent',icon:'💬', description: 'Reply to and categorize customer messages' },
+  content:   { displayName: 'Content Agent', icon: '✍️', description: 'Create, publish, and analyze content' },
+  ads:       { displayName: 'Ads Agent',     icon: '📢', description: 'Monitor and optimize ad campaigns' },
+  finance:   { displayName: 'Finance Agent', icon: '💰', description: 'Track revenue, expenses, and financial reports' },
+  inventory: { displayName: 'Inventory Agent',icon:'📦', description: 'Monitor and sync inventory across platforms' },
 }
 
 const MOCK_LOGS = [
-  'فحص 23 رسالة واردة',
-  'تحديث بيانات 5 عملاء',
-  'إرسال تقرير يومي',
-  'مزامنة مخزون Shopify',
-  'تحليل أداء الإعلانات',
+  'Scanned 23 incoming messages',
+  'Updated data for 5 customers',
+  'Sent daily report',
+  'Synced Shopify inventory',
+  'Analyzed ad performance',
 ]
 
 /**

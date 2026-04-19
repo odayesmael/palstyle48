@@ -3,13 +3,13 @@ const prisma = new PrismaClient();
 
 async function seedAgents() {
   const agents = [
-    { name: 'master', displayName: 'المايسترو', description: 'الإيجنت الرئيسي — يتحكم بالكل ويتواصل مع المدير', isActive: true, automationLevel: 'full' },
-    { name: 'crm', displayName: 'إيجنت العملاء', description: 'تتبع وتحليل وتصنيف العملاء تلقائياً', isActive: true, automationLevel: 'semi' },
-    { name: 'inbox', displayName: 'إيجنت الرسائل', description: 'الرد على رسائل العملاء وتصنيفها', isActive: true, automationLevel: 'semi' },
-    { name: 'content', displayName: 'إيجنت المحتوى', description: 'إنشاء ونشر وتحليل المحتوى', isActive: true, automationLevel: 'semi' },
-    { name: 'ads', displayName: 'إيجنت الإعلانات', description: 'مراقبة وتحسين الحملات الإعلانية', isActive: true, automationLevel: 'semi' },
-    { name: 'finance', displayName: 'إيجنت المالية', description: 'تتبع الإيرادات والمصاريف والتقارير المالية', isActive: true, automationLevel: 'semi' },
-    { name: 'inventory', displayName: 'إيجنت المخزون', description: 'مراقبة ومزامنة المخزون بين المنصات', isActive: true, automationLevel: 'full' },
+    { name: 'master', displayName: 'Maestro', description: 'Main Agent — Controls everything and communicates with Admin', isActive: true, automationLevel: 'full' },
+    { name: 'crm', displayName: 'Customer Agent', description: 'Automatically track, analyze, and segment customers', isActive: true, automationLevel: 'semi' },
+    { name: 'inbox', displayName: 'Messaging Agent', description: 'Reply to and categorize customer messages', isActive: true, automationLevel: 'semi' },
+    { name: 'content', displayName: 'Content Agent', description: 'Create, publish, and analyze content', isActive: true, automationLevel: 'semi' },
+    { name: 'ads', displayName: 'Ads Agent', description: 'Monitor and optimize ad campaigns', isActive: true, automationLevel: 'semi' },
+    { name: 'finance', displayName: 'Finance Agent', description: 'Track revenue, expenses, and financial reports', isActive: true, automationLevel: 'semi' },
+    { name: 'inventory', displayName: 'Inventory Agent', description: 'Monitor and sync inventory across platforms', isActive: true, automationLevel: 'full' },
   ];
 
   for (const agent of agents) {
