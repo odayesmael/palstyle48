@@ -99,7 +99,7 @@ function GeneralTab() {
     try {
       setLoading(true);
       const res = await optimizedAPI.get(`/settings`, {}, true, 300000);
-      setSettings(res?.settings || res);
+      setSettings(res?.data || res?.settings || res || {});
     } catch (err) {
       setError(err.message);
     } finally {
@@ -250,7 +250,7 @@ function PlatformsTab() {
     try {
       setLoading(true);
       const res = await optimizedAPI.get(`/platforms`, {}, true, 300000);
-      setPlatforms(res?.platforms || res);
+      setPlatforms(res?.data || res?.platforms || res || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -836,9 +836,9 @@ function AgentsTab() {
     try {
       setLoading(true);
       const res = await optimizedAPI.get(`/agents`, {}, true, 300000);
-      
-      const resData = res?.agents || res || [];
-      const validAgents = resData.filter(a => a.agentName || a.name)
+
+      const resData = res?.data || res?.agents || res || [];
+      const validAgents = (Array.isArray(resData) ? resData : []).filter(a => a.agentName || a.name)
       validAgents.forEach(a => { if(!a.name) a.name = a.agentName })
 
       setAgents(validAgents);
@@ -1046,14 +1046,12 @@ export default function Settings() {
         borderBottom: `1px solid ${C.border}`, marginBottom: 32,
       }}>
         <TabButton label="General" active={tab === 'general'} onClick={() => changeTab('general')} />
-        <TabButton label="Platforms" active={tab === 'platforms'} onClick={() => changeTab('platforms')} />
         <TabButton label="Agents" active={tab === 'agents'} onClick={() => changeTab('agents')} />
         <TabButton label="Security" active={tab === 'security'} onClick={() => changeTab('security')} />
       </div>
 
       {/* محتوى التبويب */}
       {tab === 'general' && <GeneralTab />}
-      {tab === 'platforms' && <PlatformsTab />}
       {tab === 'agents' && <AgentsTab />}
       {tab === 'security' && <SecurityTab />}
     </div>

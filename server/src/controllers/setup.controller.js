@@ -112,77 +112,28 @@ async function createAdmin(req, res) {
 
 /**
  * POST /api/setup/connect-platform
- * Mocks OAuth connection and stores the token/keys.
+ * Delegates to platforms.controller connectPlatform.
+ * This ensures OAuth flows are unified in one place.
  */
 async function connectPlatform(req, res) {
   try {
+    const { registry } = require('../integrations/registry')
     const { platform, apiKey, apiSecret, supplierId, domain } = req.body
-    // Expected platforms: meta, shopify, trendyol, notion, canva, gmail
 
     if (!platform) {
       return res.status(400).json({ success: false, message: 'يرجى تحديد المنصة' })
     }
 
-    let metadata = {}
-    
-    if (platform === 'meta') {
-      metadata = { 
-        accountName: 'palstyle48 Business',
-        pages: ['PalStyle Palestine', 'PalStyle Instagram']
-      }
-    } else if (platform === 'shopify') {
-      metadata = { storeName: domain || 'palstyle48.myshopify.com', productsCount: 531 }
-    } else if (platform === 'trendyol') {
-      metadata = { storeName: 'PalStyle TY', supplierId }
-    } else if (platform === 'notion') {
-      metadata = { workspace: 'PalStyle HQ' }
-    } else if (platform === 'canva') {
-      metadata = { team: 'PalStyle Design' }
-    } else if (platform === 'gmail') {
-      metadata = { email: 'contact@palstyle48.com' }
-    }
+    const credentials = { apiKey, apiSecret, supplierId, domain }
+    const result = await registry.connectPlatform(platform, credentials)
 
-    // Upsert platform
-    let p
-    try {
-      p = await prisma.platform.findUnique({ where: { name: platform } })
-      if (p) {
-        p = await prisma.platform.update({
-          where: { name: platform },
-          data: {
-            isConnected: true,
-            apiKey,
-            apiSecret,
-            supplierId,
-            metadata,
-            accessToken: 'mock_token_' + Date.now()
-          }
-        })
-      } else {
-        p = await prisma.platform.create({
-          data: {
-            name: platform,
-            isConnected: true,
-            apiKey,
-            apiSecret,
-            supplierId,
-            metadata,
-            accessToken: 'mock_token_' + Date.now()
-          }
-        })
-      }
-    } catch (dbErr) {
-      console.warn('[SetupWarning] Platform DB save failed:', dbErr)
-      p = { id: 'mock', name: platform, isConnected: true }
-    }
-
-    // Update setup state
+    // Update setup state after successful connection
     await updateSetupState({ platformsLinked: true, currentStep: 2 })
 
-    return res.json({ success: true, platform: p })
+    return res.json({ success: true, ...result })
   } catch (err) {
     console.error('[Setup/connectPlatform]', err)
-    return res.status(500).json({ success: false, message: 'خطأ في الخادم' })
+    return res.status(400).json({ success: false, message: err.message })
   }
 }
 

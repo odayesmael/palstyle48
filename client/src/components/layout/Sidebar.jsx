@@ -14,6 +14,7 @@ import {
   CheckSquare,
   ChevronRight,
   Zap,
+  Link2,
 } from 'lucide-react'
 import useAuthStore from '../../store/authStore'
 
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { to: '/finance',    icon: Wallet,          label: 'المالية',         labelEn: 'Finance' },
   { to: '/inventory',  icon: Package,         label: 'المخزون',         labelEn: 'Inventory' },
   { to: '/agents',     icon: Bot,             label: 'الإيجنتات',       labelEn: 'Agents' },
+  { to: '/connect',    icon: Link2,           label: 'الربط',            labelEn: 'Connect' },
   { to: '/settings',   icon: Settings,        label: 'الإعدادات',       labelEn: 'Settings' },
   { to: '/users',      icon: UsersRound,      label: 'المستخدمون',      labelEn: 'Users',    adminOnly: true },
 ]

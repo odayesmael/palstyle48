@@ -55,6 +55,19 @@ export const optimizedAPI = {
   },
 
   /**
+   * PUT request with proper error handling
+   */
+  put: async (url, data = {}, options = {}) => {
+    try {
+      const response = await api.put(url, data, options)
+      return response.data
+    } catch (error) {
+      console.error(`API PUT Error [${url}]:`, error)
+      throw error
+    }
+  },
+
+  /**
    * PATCH request with proper error handling
    */
   patch: async (url, data = {}, options = {}) => {

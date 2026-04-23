@@ -119,7 +119,7 @@ export default function InboxPage() {
   const [customerDetail, setCustomerDetail] = useState(null)
 
   const [platformFilter, setPlatformFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('unread')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [replyText, setReplyText] = useState('')
   const [showTemplates, setShowTemplates] = useState(false)

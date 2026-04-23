@@ -19,6 +19,7 @@ const Agents        = lazy(() => import('./pages/Agents'))
 const Settings      = lazy(() => import('./pages/Settings'))
 const Tasks         = lazy(() => import('./pages/Tasks'))
 const Users         = lazy(() => import('./pages/Users'))
+const Connect       = lazy(() => import('./pages/Connect'))
 const OAuthCallback = lazy(() => import('./pages/OAuthCallback'))
 
 // ── Lightweight fallback while a page chunk loads ────────────────────────────
@@ -87,6 +88,7 @@ export default function App() {
           <Route path="agents"        element={<Suspense fallback={<PageLoader />}><Agents /></Suspense>} />
           <Route path="tasks"         element={<Suspense fallback={<PageLoader />}><Tasks /></Suspense>} />
           <Route path="users"         element={<Suspense fallback={<PageLoader />}><Users /></Suspense>} />
+          <Route path="connect"      element={<Suspense fallback={<PageLoader />}><Connect /></Suspense>} />
           <Route path="settings"      element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />
         </Route>
 

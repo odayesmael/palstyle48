@@ -1,7 +1,10 @@
-// ─── OAuth Routes ─────────────────────────────────────────────────────────────
+// ─── OAuth Routes — UNIFIED ENTRY POINT ─────────────────────────────────────
+// CRITICAL: This is the ONLY place where OAuth flows should be handled.
+// All platform connections funnel through here after setup/platforms controllers initiate.
+//
 // GET  /api/oauth/:platform/authorize  → redirect user to platform OAuth page
-// GET  /api/oauth/:platform/callback   → receive code, exchange for token, save
-// POST /api/oauth/trendyol/test        → test Trendyol API key credentials
+// GET  /api/oauth/:platform/callback   → receive code, exchange for token, save to DB
+// POST /api/oauth/:platform/test       → test platform API credentials (Shopify/Trendyol)
 
 const express  = require('express')
 const router   = express.Router()
@@ -90,7 +93,17 @@ router.get('/meta/callback', async (req, res) => {
       instagramId:  p.instagram_business_account?.id || null,
     }))
 
-    // 5. Save to DB
+    // 5. Save to DB (centralized through registry)
+    const { registry } = require('../integrations/registry')
+
+    const metaData = {
+      userName: me.name,
+      userId:   me.id,
+      pages,
+      scopes:   req.query.granted_scopes || '',
+      needsReauth: false,
+    }
+
     await prisma.platform.upsert({
       where:  { name: 'meta' },
       create: { name: 'meta', displayName: 'Meta', isConnected: true },
@@ -100,18 +113,11 @@ router.get('/meta/callback', async (req, res) => {
         refreshToken: null,
         tokenExpiry:  new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
         lastSync:     new Date(),
-        metadata: {
-          userName: me.name,
-          userId:   me.id,
-          pages,
-          scopes:   req.query.granted_scopes || '',
-          needsReauth: false,
-        },
+        metadata: metaData,
       },
     })
 
-    // Connect via registry so it's live immediately
-    const { registry } = require('../integrations/registry')
+    // Register with live system
     await registry.connectPlatform('meta', { accessToken: longToken })
 
     return redirectSuccess(res, 'meta')
@@ -187,6 +193,19 @@ router.get('/shopify/callback', async (req, res) => {
       } catch {}
     }
 
+    // Prepare metadata
+    const { registry } = require('../integrations/registry')
+    const shopifyMetadata = {
+      shop,
+      shopName:     shopInfo.shop?.name,
+      shopUrl:      `https://${shop}`,
+      productCount: shopInfo.shop?.published_products_count,
+      plan:         shopInfo.shop?.plan_name,
+      scopes:       tokenData.scope,
+      needsReauth:  false,
+    }
+
+    // Save to DB and register with live system
     await prisma.platform.upsert({
       where:  { name: 'shopify' },
       create: { name: 'shopify', displayName: 'Shopify', isConnected: true },
@@ -196,20 +215,10 @@ router.get('/shopify/callback', async (req, res) => {
         refreshToken: null,
         tokenExpiry:  null,    // Shopify tokens never expire
         lastSync:     new Date(),
-        metadata: {
-          shop,
-          shopName:     shopInfo.shop?.name,
-          shopUrl:      `https://${shop}`,
-          productCount: shopInfo.shop?.published_products_count,
-          plan:         shopInfo.shop?.plan_name,
-          scopes:       tokenData.scope,
-          needsReauth:  false,
-        },
+        metadata:     shopifyMetadata,
       },
     })
 
-    // Connect via registry so it's live immediately
-    const { registry } = require('../integrations/registry')
     await registry.connectPlatform('shopify', { accessToken, shop })
 
     return redirectSuccess(res, 'shopify')
@@ -239,7 +248,18 @@ router.post('/shopify/test', verifyToken, async (req, res) => {
     if (!testRes.ok) throw new Error(`Shopify API returned ${testRes.status}`)
     const shopData = await testRes.json()
 
-    // Save to DB and registry
+    // Prepare metadata
+    const { registry } = require('../integrations/registry')
+    const shopifyMetadata = {
+      shop:        shopDomain,
+      shopName:    shopData.shop?.name,
+      shopUrl:     `https://${shopDomain}`,
+      plan:        shopData.shop?.plan_name,
+      currency:    shopData.shop?.currency,
+      needsReauth: false,
+    }
+
+    // Save to DB and register with live system
     await prisma.platform.upsert({
       where:  { name: 'shopify' },
       create: { name: 'shopify', displayName: 'Shopify', isConnected: true },
@@ -249,19 +269,10 @@ router.post('/shopify/test', verifyToken, async (req, res) => {
         refreshToken: null,
         tokenExpiry:  null,
         lastSync:     new Date(),
-        metadata: {
-          shop:        shopDomain,
-          shopName:    shopData.shop?.name,
-          shopUrl:     `https://${shopDomain}`,
-          plan:        shopData.shop?.plan_name,
-          currency:    shopData.shop?.currency,
-          needsReauth: false,
-        },
+        metadata:     shopifyMetadata,
       },
     })
 
-    // Connect via registry so it's live immediately
-    const { registry } = require('../integrations/registry')
     await registry.connectPlatform('shopify', { accessToken, shop: shopDomain })
 
     return res.json({
@@ -300,7 +311,15 @@ router.post('/trendyol/test', verifyToken, async (req, res) => {
     if (!testRes.ok) throw new Error(`Trendyol API returned ${testRes.status}`)
     const data = await testRes.json()
 
-    // Save to DB
+    // Prepare metadata
+    const { registry } = require('../integrations/registry')
+    const trendyolMetadata = {
+      supplierId,
+      totalProducts: data.totalElements || 0,
+      needsReauth:   false,
+    }
+
+    // Save to DB and register with live system
     await prisma.platform.upsert({
       where:  { name: 'trendyol' },
       create: { name: 'trendyol', displayName: 'Trendyol', isConnected: true },
@@ -310,13 +329,11 @@ router.post('/trendyol/test', verifyToken, async (req, res) => {
         refreshToken: encrypt(apiSecret),
         tokenExpiry:  null,
         lastSync:     new Date(),
-        metadata: {
-          supplierId,
-          totalProducts: data.totalElements || 0,
-          needsReauth:   false,
-        },
+        metadata:     trendyolMetadata,
       },
     })
+
+    await registry.connectPlatform('trendyol', { apiKey, apiSecret, supplierId })
 
     return res.json({ success: true, message: 'تم الربط بنجاح', totalProducts: data.totalElements })
   } catch (err) {
@@ -371,6 +388,16 @@ router.get('/gmail/callback', async (req, res) => {
     })
     const profile = await profileRes.json()
 
+    // Prepare metadata
+    const { registry } = require('../integrations/registry')
+    const gmailMetadata = {
+      email:         profile.emailAddress,
+      totalMessages: profile.messagesTotal,
+      scopes:        tokenData.scope,
+      needsReauth:   false,
+    }
+
+    // Save to DB and register with live system
     await prisma.platform.upsert({
       where:  { name: 'gmail' },
       create: { name: 'gmail', displayName: 'Gmail', isConnected: true },
@@ -380,17 +407,10 @@ router.get('/gmail/callback', async (req, res) => {
         refreshToken: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : undefined,
         tokenExpiry:  new Date(Date.now() + (tokenData.expires_in || 3600) * 1000),
         lastSync:     new Date(),
-        metadata: {
-          email:         profile.emailAddress,
-          totalMessages: profile.messagesTotal,
-          scopes:        tokenData.scope,
-          needsReauth:   false,
-        },
+        metadata:     gmailMetadata,
       },
     })
 
-    // Connect via registry so it's live immediately
-    const { registry } = require('../integrations/registry')
     await registry.connectPlatform('gmail', { accessToken: tokenData.access_token })
 
     return redirectSuccess(res, 'gmail')
@@ -440,6 +460,17 @@ router.get('/notion/callback', async (req, res) => {
     const tokenData = await tokenRes.json()
     if (!tokenData.access_token) throw new Error(`Notion token failed: ${JSON.stringify(tokenData)}`)
 
+    // Prepare metadata
+    const { registry } = require('../integrations/registry')
+    const notionMetadata = {
+      workspaceName: tokenData.workspace_name,
+      workspaceId:   tokenData.workspace_id,
+      botId:         tokenData.bot_id,
+      workspaceIcon: tokenData.workspace_icon,
+      needsReauth:   false,
+    }
+
+    // Save to DB and register with live system
     await prisma.platform.upsert({
       where:  { name: 'notion' },
       create: { name: 'notion', displayName: 'Notion', isConnected: true },
@@ -449,18 +480,10 @@ router.get('/notion/callback', async (req, res) => {
         refreshToken: null,
         tokenExpiry:  null,   // Notion tokens don't expire
         lastSync:     new Date(),
-        metadata: {
-          workspaceName: tokenData.workspace_name,
-          workspaceId:   tokenData.workspace_id,
-          botId:         tokenData.bot_id,
-          workspaceIcon: tokenData.workspace_icon,
-          needsReauth:   false,
-        },
+        metadata:     notionMetadata,
       },
     })
 
-    // Connect via registry so it's live immediately
-    const { registry } = require('../integrations/registry')
     await registry.connectPlatform('notion', { accessToken: tokenData.access_token })
 
     return redirectSuccess(res, 'notion')
@@ -520,6 +543,16 @@ router.get('/canva/callback', async (req, res) => {
     })
     const profile = await profileRes.json()
 
+    // Prepare metadata
+    const { registry } = require('../integrations/registry')
+    const canvaMetadata = {
+      userId:      profile.user?.id,
+      displayName: profile.user?.display_name,
+      teamId:      profile.user?.team_user?.team_id,
+      needsReauth: false,
+    }
+
+    // Save to DB and register with live system
     await prisma.platform.upsert({
       where:  { name: 'canva' },
       create: { name: 'canva', displayName: 'Canva', isConnected: true },
@@ -529,17 +562,10 @@ router.get('/canva/callback', async (req, res) => {
         refreshToken: tokenData.refresh_token ? encrypt(tokenData.refresh_token) : undefined,
         tokenExpiry:  new Date(Date.now() + (tokenData.expires_in || 3600) * 1000),
         lastSync:     new Date(),
-        metadata: {
-          userId:      profile.user?.id,
-          displayName: profile.user?.display_name,
-          teamId:      profile.user?.team_user?.team_id,
-          needsReauth: false,
-        },
+        metadata:     canvaMetadata,
       },
     })
 
-    // Connect via registry so it's live immediately
-    const { registry } = require('../integrations/registry')
     await registry.connectPlatform('canva', { accessToken: tokenData.access_token })
 
     return redirectSuccess(res, 'canva')

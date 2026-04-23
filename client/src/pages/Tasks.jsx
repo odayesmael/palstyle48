@@ -1,324 +1,93 @@
 import { useState, useEffect } from 'react'
 import optimizedAPI from '../services/optimizedAPI'
-import { pageCache } from '../utils/pageCache'
-const PC = 'tasks'
-import { useDebounce } from '../hooks/useDebounce'
 import {
-  LayoutList, FileText, Database, ArrowRight,
-  Plus, Pencil, Trash2, X, Check, Loader2
+  LayoutList, Plus, Pencil, Trash2, X, Check, Loader2,
+  Clock, AlertTriangle, AlertCircle, Calendar, MessageSquare, ListTodo
 } from 'lucide-react'
 
 const C = {
-  bg: '#0a0b0d', surface: '#12141a', card: '#1a1d26',
+  bg: '#0f1117', surface: '#161921', card: '#1c1f29',
   border: '#2a2d3a', accent: '#c9a55a', text: '#e8e8ec',
-  muted: '#8b8fa4', dim: '#5a5e72', red: '#f87171', green: '#34d399',
+  muted: '#8b8fa4', dim: '#5a5e72',
+  red: '#ef4444', orange: '#f97316', yellow: '#eab308', green: '#10b981', blue: '#3b82f6'
 }
 
-// ─── Helper: render property value as readable text ──────────────────────────
-function getPropText(prop) {
-  if (!prop) return ''
-  if (prop.title)        return prop.title.map(t => t.plain_text).join('')
-  if (prop.rich_text)    return prop.rich_text.map(t => t.plain_text).join('')
-  if (prop.select)       return prop.select.name
-  if (prop.status)       return prop.status.name
-  if (prop.multi_select) return prop.multi_select.map(s => s.name).join(', ')
-  if (prop.date)         return prop.date.start
-  if (prop.checkbox !== undefined) return prop.checkbox ? '✅' : '❌'
-  if (prop.number !== null && prop.number !== undefined) return prop.number
-  return ''
-}
+const STATUSES = [
+  { id: 'todo', label: 'To Do', color: C.blue },
+  { id: 'in_progress', label: 'In Progress', color: C.yellow },
+  { id: 'done', label: 'Done', color: C.green },
+]
 
-// ─── Helper: convert raw form values + schema → Notion properties format ─────
-function buildNotionProperties(schema, formValues) {
-  const props = {}
-  for (const [key, def] of Object.entries(schema)) {
-    const val = formValues[key]
-    if (val === undefined || val === '' || val === null) continue
-    if (def.type === 'title')       props[key] = { title: [{ text: { content: val } }] }
-    if (def.type === 'rich_text')   props[key] = { rich_text: [{ text: { content: val } }] }
-    if (def.type === 'number')      props[key] = { number: parseFloat(val) }
-    if (def.type === 'checkbox')    props[key] = { checkbox: val === true || val === 'true' }
-    if (def.type === 'select')      props[key] = { select: { name: val } }
-    if (def.type === 'status')      props[key] = { status: { name: val } }
-    if (def.type === 'date')        props[key] = { date: { start: val } }
-    if (def.type === 'multi_select') {
-      props[key] = { multi_select: (val || []).map(v => ({ name: v })) }
-    }
-  }
-  return props
-}
+const PRIORITIES = [
+  { id: 'low', label: 'Low', color: C.dim },
+  { id: 'medium', label: 'Medium', color: C.blue },
+  { id: 'high', label: 'High', color: C.orange },
+  { id: 'urgent', label: 'Urgent', color: C.red },
+]
 
-// ─── Helper: extract editable field types ────────────────────────────────────
-const EDITABLE_TYPES = ['title', 'rich_text', 'number', 'checkbox', 'select', 'status', 'date', 'multi_select']
-
-function getEditableSchema(schema) {
-  return Object.fromEntries(
-    Object.entries(schema).filter(([, def]) => EDITABLE_TYPES.includes(def.type))
-  )
-}
-
-// ─── Dynamic Form Field ───────────────────────────────────────────────────────
-function DynamicField({ fieldKey, def, value, onChange }) {
-  const inputStyle = {
-    width: '100%', padding: '10px 14px', borderRadius: 10,
-    background: C.bg, border: `1px solid ${C.border}`,
-    color: C.text, fontSize: 14, outline: 'none', fontFamily: 'inherit',
-    boxSizing: 'border-box', direction: 'ltr',
-  }
-
-  if (def.type === 'checkbox') {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <input
-          type="checkbox"
-          checked={!!value}
-          onChange={e => onChange(e.target.checked)}
-          style={{ width: 18, height: 18, accentColor: C.accent, cursor: 'pointer' }}
-        />
-        <span style={{ color: C.muted, fontSize: 13 }}>{fieldKey}</span>
-      </div>
-    )
-  }
-
-  if (def.type === 'select' || def.type === 'status') {
-    const options = def.type === 'select'
-      ? (def.select?.options || [])
-      : (def.status?.options || [])
-    return (
-      <select
-        value={value || ''}
-        onChange={e => onChange(e.target.value)}
-        style={{ ...inputStyle, cursor: 'pointer' }}
-      >
-        <option value="">-- Select --</option>
-        {options.map(opt => (
-          <option key={opt.name} value={opt.name}>{opt.name}</option>
-        ))}
-      </select>
-    )
-  }
-
-  if (def.type === 'date') {
-    return (
-      <input
-        type="date"
-        value={value || ''}
-        onChange={e => onChange(e.target.value)}
-        style={{ ...inputStyle, direction: 'ltr' }}
-      />
-    )
-  }
-
-  if (def.type === 'number') {
-    return (
-      <input
-        type="number"
-        value={value ?? ''}
-        onChange={e => onChange(e.target.value)}
-        style={inputStyle}
-      />
-    )
-  }
-
-  // title and rich_text
-  return (
-    <input
-      type="text"
-      value={value || ''}
-      onChange={e => onChange(e.target.value)}
-      placeholder={`Enter ${fieldKey}...`}
-      style={inputStyle}
-    />
-  )
-}
-
-// ─── Task Modal (Create / Edit) ───────────────────────────────────────────────
-function TaskModal({ mode, schema, initialValues = {}, onClose, onSave, saving }) {
-  const editableSchema = getEditableSchema(schema)
-  const [form, setForm] = useState(initialValues)
-
-  function handleChange(key, val) {
-    setForm(prev => ({ ...prev, [key]: val }))
-  }
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
-        backdropFilter: 'blur(8px)', display: 'flex', justifyContent: 'center',
-        alignItems: 'center', zIndex: 1000, padding: 24,
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          background: C.surface, borderRadius: 20, padding: '32px 36px',
-          width: '100%', maxWidth: 520, maxHeight: '80vh', overflowY: 'auto',
-          border: `1px solid ${C.border}`, boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
-        }}
-      >
-        {/* Modal Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}>
-            <X size={20} />
-          </button>
-          <div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: C.text, margin: 0, textAlign: 'left' }}>
-              {mode === 'create' ? '➕ Add New Task' : '✏️ Edit Task'}
-            </h2>
-          </div>
-        </div>
-
-        {/* Form Fields */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {Object.entries(editableSchema).map(([key, def]) => (
-            def.type !== 'checkbox' ? (
-              <div key={key}>
-                <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 8, textAlign: 'left', fontWeight: 500 }}>
-                  {key}
-                </label>
-                <DynamicField
-                  fieldKey={key}
-                  def={def}
-                  value={form[key]}
-                  onChange={val => handleChange(key, val)}
-                />
-              </div>
-            ) : (
-              <div key={key}>
-                <DynamicField
-                  fieldKey={key}
-                  def={def}
-                  value={form[key]}
-                  onChange={val => handleChange(key, val)}
-                />
-              </div>
-            )
-          ))}
-        </div>
-
-        {/* Modal Actions */}
-        <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
-          <button
-            onClick={onClose}
-            style={{
-              flex: 1, padding: '12px 0', borderRadius: 12,
-              border: `1px solid ${C.border}`, background: 'transparent',
-              color: C.muted, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSave(form)}
-            disabled={saving}
-            style={{
-              flex: 1, padding: '12px 0', borderRadius: 12, border: 'none',
-              background: `linear-gradient(135deg, #d4a843, ${C.accent})`,
-              color: '#000', cursor: saving ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit', fontWeight: 700, fontSize: 15,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              opacity: saving ? 0.7 : 1,
-            }}
-          >
-            {saving ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
-            {mode === 'create' ? 'Add' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Main Tasks Page ──────────────────────────────────────────────────────────
 export default function Tasks() {
-  const _c = pageCache.get(PC) || {}
-  const [databases, setDatabases]   = useState(_c.databases ?? [])
-  const [selectedDb, setSelectedDb] = useState(_c.selectedDb ?? null)
-  const [schema, setSchema]         = useState(_c.schema ?? {})
-  const [tasks, setTasks]           = useState(_c.tasks ?? [])
-  const [loading, setLoading]       = useState(!pageCache.has(PC))
-  const [tasksLoading, setTasksLoading] = useState(false)
-  const [error, setError]           = useState(null)
+  const [tasks, setTasks] = useState([])
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-  // Modal states
-  const [showModal, setShowModal]   = useState(false)
-  const [editingTask, setEditingTask] = useState(null) // null = create mode
-  const [saving, setSaving]         = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState(null) // task id to confirm delete
-  const [deleting, setDeleting]     = useState(false)
+  // Modals
+  const [showModal, setShowModal] = useState(false)
+  const [editingTask, setEditingTask] = useState(null)
+  const [saving, setSaving] = useState(false)
 
-  useEffect(() => { fetchDatabases() }, [])
-  useEffect(() => { if (selectedDb) { fetchTasks(selectedDb.id); fetchSchema(selectedDb.id) } }, [selectedDb])
+  // Form State
+  const [form, setForm] = useState({ title: '', description: '', priority: 'medium', dueDate: '', status: 'todo' })
 
-  async function fetchDatabases() {
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  async function fetchData() {
     try {
-      if (!pageCache.has(PC)) setLoading(true)
-      const res = await optimizedAPI.get('/notion/databases', {}, true, 300000)
-      setDatabases(res.data)
-      const first = pageCache.get(PC)?.selectedDb || (res.data.length > 0 ? res.data[0] : null)
-      if (first) setSelectedDb(first)
-      pageCache.set(PC, { ...pageCache.get(PC), databases: res.data, selectedDb: first })
+      setLoading(true)
+      const [tasksRes, statsRes] = await Promise.all([
+        optimizedAPI.get('/tasks'),
+        optimizedAPI.get('/tasks/stats')
+      ])
+      setTasks(tasksRes.data?.tasks || [])
+      setStats(statsRes.data?.stats || null)
     } catch (err) {
-      setError(err.response?.data?.message || err.message)
+      setError('Failed to load tasks. Please try again.')
+      console.error(err)
     } finally {
       setLoading(false)
     }
   }
 
-  async function fetchSchema(dbId) {
-    try {
-      const res = await optimizedAPI.get(`/notion/databases/${dbId}`, {}, true, 300000)
-      setSchema(res.data.properties || {})
-    } catch (err) {
-      console.error('[Schema]', err.message)
+  function handleOpenModal(task = null) {
+    if (task) {
+      setEditingTask(task)
+      setForm({
+        title: task.title,
+        description: task.description || '',
+        priority: task.priority,
+        dueDate: task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : '',
+        status: task.status
+      })
+    } else {
+      setEditingTask(null)
+      setForm({ title: '', description: '', priority: 'medium', dueDate: '', status: 'todo' })
     }
+    setShowModal(true)
   }
 
-  async function fetchTasks(dbId) {
-    try {
-      setTasksLoading(true)
-      const res = await optimizedAPI.get(`/notion/databases/${dbId}/query`, {}, true, 300000)
-      setTasks(res.data)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setTasksLoading(false)
-    }
-  }
-
-  // ── Extract initial values from a task for the edit form ──
-  function extractFormValues(task) {
-    const values = {}
-    const editableSchema = getEditableSchema(schema)
-    for (const [key, def] of Object.entries(editableSchema)) {
-      const prop = task.properties[key]
-      if (!prop) continue
-      if (def.type === 'title')      values[key] = prop.title?.map(t => t.plain_text).join('') || ''
-      if (def.type === 'rich_text')  values[key] = prop.rich_text?.map(t => t.plain_text).join('') || ''
-      if (def.type === 'number')     values[key] = prop.number ?? ''
-      if (def.type === 'checkbox')   values[key] = prop.checkbox ?? false
-      if (def.type === 'select')     values[key] = prop.select?.name ?? ''
-      if (def.type === 'status')     values[key] = prop.status?.name ?? ''
-      if (def.type === 'date')       values[key] = prop.date?.start ?? ''
-      if (def.type === 'multi_select') values[key] = prop.multi_select?.map(s => s.name) ?? []
-    }
-    return values
-  }
-
-  async function handleSave(formValues) {
-    const properties = buildNotionProperties(schema, formValues)
+  async function handleSave() {
+    if (!form.title.trim()) return alert('Title is required')
     setSaving(true)
     try {
       if (editingTask) {
-        await optimizedAPI.patch(`/notion/pages/${editingTask.id}`, { properties })
+        await optimizedAPI.put(`/tasks/${editingTask.id}`, form)
       } else {
-        await optimizedAPI.post(`/notion/databases/${selectedDb.id}/pages`, { properties })
+        await optimizedAPI.post('/tasks', form)
       }
       setShowModal(false)
-      setEditingTask(null)
-      fetchTasks(selectedDb.id)
+      fetchData()
     } catch (err) {
       alert('Save failed: ' + (err.response?.data?.message || err.message))
     } finally {
@@ -326,230 +95,224 @@ export default function Tasks() {
     }
   }
 
-  async function handleDelete(taskId) {
-    setDeleting(true)
+  async function handleDelete(id) {
+    if (!confirm('Are you sure you want to delete this task?')) return
     try {
-      await optimizedAPI.delete(`/notion/pages/${taskId}`)
-      setDeleteConfirm(null)
-      fetchTasks(selectedDb.id)
+      await optimizedAPI.delete(`/tasks/${id}`)
+      fetchData()
     } catch (err) {
-      alert('Delete failed: ' + (err.response?.data?.message || err.message))
-    } finally {
-      setDeleting(false)
+      alert('Delete failed')
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  async function changeStatus(id, newStatus) {
+    try {
+      setTasks(tasks.map(t => t.id === id ? { ...t, status: newStatus } : t))
+      await optimizedAPI.put(`/tasks/${id}/status`, { status: newStatus })
+      fetchData()
+    } catch (err) {
+      fetchData() // revert
+    }
+  }
 
-  if (loading) return <div style={{ color: C.muted, padding: 60, textAlign: 'center', fontSize: 15 }}>⏳ Loading Notion databases...</div>
+  // Kanban Grouping
+  const columns = {
+    todo: tasks.filter(t => t.status === 'todo'),
+    in_progress: tasks.filter(t => t.status === 'in_progress'),
+    done: tasks.filter(t => t.status === 'done')
+  }
 
-  if (error) return (
-    <div style={{ padding: 60, textAlign: 'center' }}>
-      <p style={{ fontSize: 48, marginBottom: 16 }}>📝</p>
-      <h2 style={{ color: C.red, fontSize: 22, marginBottom: 8 }}>Could not connect to Notion</h2>
-      <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }}>{error}<br />Please make sure Notion is connected in Settings and that your databases are shared with the integration.</p>
-    </div>
-  )
-
-  if (databases.length === 0) return (
-    <div style={{ padding: 60, textAlign: 'center' }}>
-      <p style={{ fontSize: 48, marginBottom: 16 }}>🗂️</p>
-      <h2 style={{ color: C.text, fontSize: 22, marginBottom: 8 }}>No databases found</h2>
-      <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7 }}>No shared databases were found.<br />Open the database in Notion, click Share, and enable access for the integration.</p>
-    </div>
-  )
-
-  const columns = tasks.length > 0 ? Object.keys(tasks[0].properties || {}) : []
+  if (loading && tasks.length === 0) return <div style={{ color: C.muted, padding: 60, textAlign: 'center' }}>Loading tasks...</div>
+  if (error) return <div style={{ color: C.red, padding: 60, textAlign: 'center' }}>{error}</div>
 
   return (
     <div style={{ padding: '32px 40px', maxWidth: 1400, margin: '0 auto' }}>
-
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
+      
+      {/* Header & Stats */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
+        <div>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: C.text, margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <ListTodo size={28} color={C.accent} />
+            Task Management
+          </h1>
+          <p style={{ fontSize: 14, color: C.muted, marginTop: 6 }}>Manage your CRM workflow and operations.</p>
+        </div>
         <button
-          onClick={() => { setEditingTask(null); setShowModal(true) }}
+          onClick={() => handleOpenModal()}
           style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            padding: '10px 20px', borderRadius: 12, border: 'none',
-            background: `linear-gradient(135deg, #d4a843, ${C.accent})`,
-            color: '#000', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+            padding: '10px 20px', borderRadius: 10, border: 'none',
+            background: `linear-gradient(135deg, ${C.accent}, #e0be77)`,
+            color: '#000', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+            boxShadow: '0 4px 15px rgba(201, 165, 90, 0.2)'
           }}
         >
-          <Plus size={18} /> Add Task
+          <Plus size={18} /> New Task
         </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div>
-            <h1 style={{ fontSize: 24, fontWeight: 700, color: C.text, margin: 0, textAlign: 'left' }}>Tasks & Work Boards</h1>
-            <p style={{ fontSize: 13, color: C.muted, marginTop: 4, textAlign: 'left' }}>Data synced directly from Notion</p>
-          </div>
-          <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <LayoutList size={22} color={C.accent} />
-          </div>
-        </div>
       </div>
 
-      {/* ── Database Tabs ───────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 12, marginBottom: 28 }}>
-        {databases.map(db => (
-          <button
-            key={db.id}
-            onClick={() => setSelectedDb(db)}
-            style={{
-              padding: '9px 20px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
-              border: `1px solid ${selectedDb?.id === db.id ? C.accent : C.border}`,
-              background: selectedDb?.id === db.id ? 'rgba(201,165,90,0.12)' : 'transparent',
-              color: selectedDb?.id === db.id ? C.accent : C.muted,
-              display: 'flex', alignItems: 'center', gap: 8,
-              fontWeight: selectedDb?.id === db.id ? 600 : 400,
-              transition: 'all 0.2s',
-            }}
-          >
-            <Database size={15} /> {db.title}
-          </button>
+      {stats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+          {[
+            { label: 'To Do', val: stats.todo, color: C.blue, icon: ListTodo },
+            { label: 'In Progress', val: stats.inProgress, color: C.yellow, icon: Clock },
+            { label: 'Done', val: stats.done, color: C.green, icon: Check },
+            { label: 'Overdue', val: stats.overdue, color: C.red, icon: AlertCircle }
+          ].map((s, i) => (
+            <div key={i} style={{ background: C.surface, borderRadius: 16, padding: 20, border: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ background: `${s.color}15`, padding: 12, borderRadius: 12, color: s.color }}>
+                <s.icon size={24} />
+              </div>
+              <div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: C.text }}>{s.val}</div>
+                <div style={{ fontSize: 13, color: C.muted }}>{s.label}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Kanban Board */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24, alignItems: 'start' }}>
+        {STATUSES.map(col => (
+          <div key={col.id} style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, padding: 20, minHeight: 400 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: col.color }} />
+                <h3 style={{ fontSize: 16, fontWeight: 600, color: C.text, margin: 0 }}>{col.label}</h3>
+              </div>
+              <span style={{ background: C.card, padding: '4px 10px', borderRadius: 20, fontSize: 12, color: C.muted, fontWeight: 600 }}>
+                {columns[col.id].length}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {columns[col.id].map(task => {
+                const priority = PRIORITIES.find(p => p.id === task.priority) || PRIORITIES[0]
+                const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== 'done'
+                
+                return (
+                  <div key={task.id} style={{ 
+                    background: C.card, borderRadius: 12, padding: 16, 
+                    border: `1px solid ${isOverdue ? C.red + '44' : C.border}`,
+                    borderLeft: `4px solid ${priority.color}`,
+                    transition: 'transform 0.2s', cursor: 'pointer'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                      <h4 style={{ margin: 0, fontSize: 15, color: C.text, fontWeight: 500, lineHeight: 1.4 }}>{task.title}</h4>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => handleOpenModal(task)} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', padding: 2 }}><Pencil size={14} /></button>
+                        <button onClick={() => handleDelete(task.id)} style={{ background: 'none', border: 'none', color: C.red, cursor: 'pointer', padding: 2 }}><Trash2 size={14} /></button>
+                      </div>
+                    </div>
+                    
+                    {task.description && (
+                      <p style={{ fontSize: 13, color: C.muted, margin: '0 0 12px 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {task.description}
+                      </p>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {task.dueDate && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: isOverdue ? C.red : C.muted, background: isOverdue ? C.red+'11' : C.bg, padding: '4px 8px', borderRadius: 6 }}>
+                            <Calendar size={12} /> {new Date(task.dueDate).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Status Dropdown to Move Task */}
+                      <select 
+                        value={task.status} 
+                        onChange={(e) => changeStatus(task.id, e.target.value)}
+                        style={{
+                          background: C.bg, border: `1px solid ${C.border}`, color: C.text,
+                          fontSize: 11, padding: '4px 8px', borderRadius: 6, outline: 'none', cursor: 'pointer'
+                        }}
+                      >
+                        {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )
+              })}
+              
+              {columns[col.id].length === 0 && (
+                <div style={{ textAlign: 'center', padding: '32px 0', color: C.dim, fontSize: 13, border: `1px dashed ${C.border}`, borderRadius: 12 }}>
+                  No tasks here
+                </div>
+              )}
+            </div>
+          </div>
         ))}
       </div>
 
-      {/* ── Tasks Table ─────────────────────────────────────────────────────── */}
-      <div style={{ background: C.card, borderRadius: 16, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
-        {tasksLoading ? (
-          <div style={{ padding: 60, textAlign: 'center', color: C.muted }}>⏳ Loading data...</div>
-        ) : tasks.length === 0 ? (
-          <div style={{ padding: 60, textAlign: 'center', color: C.dim }}>
-            <FileText size={48} style={{ margin: '0 auto 16px', opacity: 0.4 }} />
-            <p>This database is empty. Click "Add Task" to get started.</p>
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ background: C.surface, borderBottom: `1px solid ${C.border}` }}>
-                  {columns.map(col => (
-                    <th key={col} style={{ padding: '14px 20px', fontSize: 12, fontWeight: 600, color: C.muted, whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      {col}
-                    </th>
-                  ))}
-                  <th style={{ padding: '14px 20px', width: 110, textAlign: 'center', fontSize: 12, fontWeight: 600, color: C.muted }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map(task => (
-                  <tr
-                    key={task.id}
-                    style={{ borderBottom: `1px solid ${C.border}`, transition: 'background 0.15s' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  >
-                    {columns.map(col => (
-                      <td key={col} style={{ padding: '14px 20px', fontSize: 14, color: C.text, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {getPropText(task.properties[col]) || <span style={{ color: C.dim }}>—</span>}
-                      </td>
-                    ))}
-                    <td style={{ padding: '14px 20px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                        {/* Edit */}
-                        <button
-                          onClick={() => { setEditingTask(task); setShowModal(true) }}
-                          title="Edit"
-                          style={{
-                            background: 'rgba(201,165,90,0.1)', border: `1px solid rgba(201,165,90,0.3)`,
-                            borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: C.accent,
-                            display: 'flex', alignItems: 'center',
-                          }}
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        {/* View in Notion */}
-                        <a
-                          href={task.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          title="View in Notion"
-                          style={{
-                            background: 'rgba(255,255,255,0.05)', border: `1px solid ${C.border}`,
-                            borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: C.muted,
-                            display: 'flex', alignItems: 'center', textDecoration: 'none',
-                          }}
-                        >
-                          <ArrowRight size={14} />
-                        </a>
-                        {/* Delete */}
-                        <button
-                          onClick={() => setDeleteConfirm(task.id)}
-                          title="Delete"
-                          style={{
-                            background: 'rgba(248,113,113,0.1)', border: `1px solid rgba(248,113,113,0.3)`,
-                            borderRadius: 8, padding: '6px 10px', cursor: 'pointer', color: C.red,
-                            display: 'flex', alignItems: 'center',
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* ── Create / Edit Modal ─────────────────────────────────────────────── */}
+      {/* ── Modal ── */}
       {showModal && (
-        <TaskModal
-          mode={editingTask ? 'edit' : 'create'}
-          schema={schema}
-          initialValues={editingTask ? extractFormValues(editingTask) : {}}
-          onClose={() => { setShowModal(false); setEditingTask(null) }}
-          onSave={handleSave}
-          saving={saving}
-        />
-      )}
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div style={{ background: C.surface, width: 500, borderRadius: 20, padding: 32, border: `1px solid ${C.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
+            <h2 style={{ margin: '0 0 24px 0', fontSize: 20, color: C.text }}>{editingTask ? 'Edit Task' : 'New Task'}</h2>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6 }}>Title *</label>
+                <input 
+                  value={form.title} onChange={e => setForm({...form, title: e.target.value})}
+                  style={{ width: '100%', padding: '10px 14px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, outline: 'none' }} 
+                  placeholder="Task title"
+                />
+              </div>
+              
+              <div>
+                <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6 }}>Description</label>
+                <textarea 
+                  value={form.description} onChange={e => setForm({...form, description: e.target.value})}
+                  style={{ width: '100%', padding: '10px 14px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, outline: 'none', minHeight: 80, resize: 'vertical' }} 
+                  placeholder="Details..."
+                />
+              </div>
 
-      {/* ── Delete Confirm Modal ────────────────────────────────────────────── */}
-      {deleteConfirm && (
-        <div
-          onClick={() => setDeleteConfirm(null)}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
-            backdropFilter: 'blur(8px)', display: 'flex', justifyContent: 'center',
-            alignItems: 'center', zIndex: 1000,
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background: C.surface, borderRadius: 20, padding: '36px 40px', width: 400,
-              border: `1px solid rgba(248,113,113,0.35)`, boxShadow: '0 25px 60px rgba(0,0,0,0.6)',
-              textAlign: 'center',
-            }}
-          >
-            <p style={{ fontSize: 48, marginBottom: 12 }}>🗑️</p>
-            <h3 style={{ color: C.text, fontSize: 20, marginBottom: 10 }}>Confirm Delete</h3>
-            <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7, marginBottom: 28 }}>
-              This task will be archived in Notion and hidden. Are you sure?
-            </p>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button
-                onClick={() => setDeleteConfirm(null)}
-                style={{ flex: 1, padding: 12, borderRadius: 12, border: `1px solid ${C.border}`, background: 'transparent', color: C.muted, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDelete(deleteConfirm)}
-                disabled={deleting}
-                style={{ flex: 1, padding: 12, borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#f87171,#ef4444)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}
-              >
-                {deleting ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={16} />}
-                Yes, Delete
+              <div style={{ display: 'flex', gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6 }}>Priority</label>
+                  <select 
+                    value={form.priority} onChange={e => setForm({...form, priority: e.target.value})}
+                    style={{ width: '100%', padding: '10px 14px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, outline: 'none' }}
+                  >
+                    {PRIORITIES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6 }}>Status</label>
+                  <select 
+                    value={form.status} onChange={e => setForm({...form, status: e.target.value})}
+                    style={{ width: '100%', padding: '10px 14px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, outline: 'none' }}
+                  >
+                    {STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 13, color: C.muted, marginBottom: 6 }}>Due Date</label>
+                <input 
+                  type="date"
+                  value={form.dueDate} onChange={e => setForm({...form, dueDate: e.target.value})}
+                  style={{ width: '100%', padding: '10px 14px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, outline: 'none', colorScheme: 'dark' }} 
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
+              <button onClick={() => setShowModal(false)} style={{ flex: 1, padding: '12px', background: 'transparent', border: `1px solid ${C.border}`, color: C.muted, borderRadius: 10, cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+              <button disabled={saving} onClick={handleSave} style={{ flex: 1, padding: '12px', background: `linear-gradient(135deg, ${C.accent}, #e0be77)`, border: 'none', color: '#000', borderRadius: 10, cursor: saving ? 'not-allowed' : 'pointer', fontWeight: 700, display: 'flex', justifyContent: 'center', gap: 8 }}>
+                {saving ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={18} />}
+                Save Task
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   )
 }

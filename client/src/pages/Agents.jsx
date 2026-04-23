@@ -1,283 +1,285 @@
-import { useState, useEffect } from 'react';
-import optimizedAPI from '../services/optimizedAPI';
+import { useState, useEffect } from 'react'
+import optimizedAPI from '../services/optimizedAPI'
+import {
+  Bot, Zap, Activity, Clock, Check, Play, Loader2,
+  AlertTriangle, Lightbulb, TrendingUp, XCircle, Settings, X
+} from 'lucide-react'
 
-// ألوان وأيقونات لكل إيجنت
+const C = {
+  bg: '#0f1117', surface: '#161921', card: '#1c1f29',
+  border: '#2a2d3a', accent: '#c9a55a', text: '#e8e8ec',
+  muted: '#8b8fa4', dim: '#5a5e72',
+  red: '#ef4444', orange: '#f97316', yellow: '#eab308', green: '#10b981', blue: '#3b82f6',
+  purple: '#8b5cf6', pink: '#ec4899'
+}
+
 const AGENT_META = {
-  master: { icon: '⚡', color: '#c9a55a', gradient: 'linear-gradient(135deg, #c9a55a, #fb923c)' },
-  crm: { icon: '👥', color: '#34d399', gradient: 'linear-gradient(135deg, #34d399, #60a5fa)' },
-  inbox: { icon: '💬', color: '#a78bfa', gradient: 'linear-gradient(135deg, #a78bfa, #f472b6)' },
-  content: { icon: '📝', color: '#60a5fa', gradient: 'linear-gradient(135deg, #60a5fa, #818cf8)' },
-  ads: { icon: '📢', color: '#fb923c', gradient: 'linear-gradient(135deg, #fb923c, #f87171)' },
-  finance: { icon: '💰', color: '#a78bfa', gradient: 'linear-gradient(135deg, #a78bfa, #c084fc)' },
-  inventory: { icon: '📦', color: '#f472b6', gradient: 'linear-gradient(135deg, #f472b6, #fb923c)' },
-};
-
-const AUTOMATION_LABELS = {
-  full: { label: 'Fully Automated', color: '#34d399' },
-  semi: { label: 'Semi-Automated', color: '#fbbf24' },
-  manual: { label: 'Manual', color: '#f87171' },
-};
+  master:    { icon: Zap,      color: C.accent, bg: 'rgba(201,165,90,0.1)' },
+  crm:       { icon: Bot,      color: C.green,  bg: 'rgba(16,185,129,0.1)' },
+  inbox:     { icon: Bot,      color: C.purple, bg: 'rgba(139,92,246,0.1)' },
+  content:   { icon: Bot,      color: C.blue,   bg: 'rgba(59,130,246,0.1)' },
+  ads:       { icon: TrendingUp, color: C.orange, bg: 'rgba(249,115,22,0.1)' },
+  finance:   { icon: Activity, color: C.purple, bg: 'rgba(139,92,246,0.1)' },
+  inventory: { icon: Bot,      color: C.pink,   bg: 'rgba(236,72,153,0.1)' },
+}
 
 export default function Agents() {
-  const [agents, setAgents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [selectedAgent, setSelectedAgent] = useState(null);
+  const [agents, setAgents] = useState([])
+  const [recommendations, setRecommendations] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  
+  const [triggering, setTriggering] = useState(null) // agent name
 
   useEffect(() => {
-    fetchAgents();
-  }, []);
+    fetchData()
+  }, [])
 
-  async function fetchAgents() {
+  async function fetchData() {
     try {
-      setLoading(true);
-      setError(null);
-      const res = await optimizedAPI.get(`/agents`, {}, true, 300000);
-      // Handle our custom struct if needed
-      setAgents(res?.agents || res);
+      setLoading(true)
+      const [agentsRes, recsRes] = await Promise.all([
+        optimizedAPI.get('/agents'),
+        optimizedAPI.get('/agents/recommendations')
+      ])
+      const agentsData = agentsRes?.data || agentsRes?.agents || agentsRes || []
+      const recsData = recsRes?.data || recsRes?.recommendations || recsRes || []
+      setAgents(Array.isArray(agentsData) ? agentsData : [])
+      setRecommendations(Array.isArray(recsData) ? recsData : [])
     } catch (err) {
-      console.error('Failed to fetch agents:', err);
-      setError(err.response?.data?.message || err.response?.data?.error || err.message);
+      console.error(err)
+      setError('Failed to load agent data')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
   }
 
   async function toggleAgent(agentName, currentStatus) {
-    if (agentName === 'master') return;
+    if (agentName === 'master') return
     try {
-      await optimizedAPI.put(`/agents/${agentName}`, { isActive: !currentStatus });
-      fetchAgents();
+      await optimizedAPI.put(`/agents/${agentName}`, { isActive: !currentStatus })
+      fetchData()
     } catch (err) {
-      console.error('Failed to toggle agent:', err);
+      console.error(err)
     }
   }
 
-  async function changeAutomation(agentName, level) {
+  async function triggerAgent(agentName) {
+    if (triggering) return
+    setTriggering(agentName)
     try {
-      await optimizedAPI.put(`/agents/${agentName}`, { automationLevel: level });
-      fetchAgents();
+      await optimizedAPI.post(`/agents/${agentName}/trigger`)
+      await fetchData()
     } catch (err) {
-      console.error('Failed to change automation:', err);
+      alert('Failed to run agent: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setTriggering(null)
     }
   }
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
-        <div style={{ color: '#8b8fa4', fontSize: 16 }}>Loading agents...</div>
-      </div>
-    );
+  async function handleRecommendation(id, action) {
+    try {
+      await optimizedAPI.post(`/agents/recommendations/${id}/${action}`)
+      setRecommendations(prev => prev.filter(r => r.id !== id))
+    } catch (err) {
+      alert('Failed to process recommendation')
+    }
   }
 
-  if (error) {
-    return (
-      <div style={{ padding: 32 }}>
-        <div style={{
-          background: '#1a1d26', border: '1px solid #f8717144', borderRadius: 12,
-          padding: 24, textAlign: 'center'
-        }}>
-          <div style={{ color: '#f87171', fontSize: 18, marginBottom: 8 }}>❌ Error loading agents</div>
-          <div style={{ color: '#8b8fa4', fontSize: 14, marginBottom: 16 }}>{error}</div>
-          <button onClick={fetchAgents} style={{
-            background: '#c9a55a', color: '#0a0b0d', border: 'none', borderRadius: 8,
-            padding: '8px 24px', cursor: 'pointer', fontWeight: 600
-          }}>Try Again</button>
-        </div>
-      </div>
-    );
-  }
+  if (loading && agents.length === 0) return <div style={{ color: C.muted, padding: 60, textAlign: 'center' }}>Loading AI Agents...</div>
+  if (error) return <div style={{ color: C.red, padding: 60, textAlign: 'center' }}>{error}</div>
 
-  if (agents.length === 0) {
-    return (
-      <div style={{ padding: 32 }}>
-        <div style={{
-          background: '#1a1d26', border: '1px solid #2a2d3a', borderRadius: 12,
-          padding: 48, textAlign: 'center'
-        }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🤖</div>
-          <div style={{ color: '#e8e8ec', fontSize: 18, marginBottom: 8 }}>No agents found</div>
-          <div style={{ color: '#8b8fa4', fontSize: 14, marginBottom: 24 }}>
-            Agents have not been set up in the database yet
-          </div>
-          <div style={{ color: '#5a5e72', fontSize: 13 }}>
-            Run: <code style={{ background: '#12141a', padding: '2px 8px', borderRadius: 4 }}>npx prisma db seed</code>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Adjust for the current agent names from our controller output
-  const validAgents = agents.filter(a => a.agentName || a.name)
-  validAgents.forEach(a => { if(!a.name) a.name = a.agentName })
-  
-  const masterAgent = validAgents.find(a => a.name === 'master');
-  const otherAgents = validAgents.filter(a => a.name !== 'master');
+  // Normalize names
+  const validAgents = agents.filter(a => a.name || a.agentName).map(a => ({...a, name: a.name || a.agentName}))
+  const masterAgent = validAgents.find(a => a.name === 'master')
+  const otherAgents = validAgents.filter(a => a.name !== 'master')
 
   return (
-    <div style={{ padding: 32 }}>
+    <div style={{ padding: '32px 40px', maxWidth: 1400, margin: '0 auto' }}>
+      
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32 }}>
+        <div>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: C.text, margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Bot size={28} color={C.accent} />
+            AI Intelligence Hub
+          </h1>
+          <p style={{ fontSize: 14, color: C.muted, marginTop: 6 }}>Manage specialized AI agents and view actionable insights.</p>
+        </div>
+      </div>
 
-      {/* المايسترو — كارد مميز بالأعلى */}
-      {masterAgent && (
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(201,165,90,0.1), rgba(26,29,38,1))',
-          borderRadius: 16, padding: 24, marginBottom: 24,
-          border: '1px solid rgba(201,165,90,0.3)',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: 24 }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#34d399' }}>
-                  {otherAgents.filter(a => a.isActive).length}/{otherAgents.length}
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 24, alignItems: 'start' }}>
+        
+        {/* Main Content: Agents List */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          
+          {/* Maestro Card */}
+          {masterAgent && (
+            <div style={{
+              background: `linear-gradient(135deg, ${C.card}, ${C.bg})`,
+              border: `1px solid ${C.accent}44`,
+              borderRadius: 20, padding: 24,
+              boxShadow: `0 10px 30px ${C.accent}11`,
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', gap: 24 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: C.green }}>{otherAgents.filter(a => a.isActive).length}/{otherAgents.length}</div>
+                  <div style={{ fontSize: 11, color: C.dim, textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>Active</div>
                 </div>
-                <div style={{ fontSize: 11, color: '#5a5e72' }}>Active</div>
+                <div style={{ width: 1, background: C.border }} />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: C.accent }}>{(masterAgent.logs || []).length}</div>
+                  <div style={{ fontSize: 11, color: C.dim, textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>Operations</div>
+                </div>
               </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#c9a55a' }}>
-                  {masterAgent.logs?.length || masterAgent.recentLogs?.length || 0}
+
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end', marginBottom: 4 }}>
+                  <h2 style={{ margin: 0, fontSize: 22, color: C.text }}>Maestro</h2>
+                  <div style={{ background: C.accent, padding: 6, borderRadius: 10, color: '#000' }}><Zap size={18} /></div>
                 </div>
-                <div style={{ fontSize: 11, color: '#5a5e72' }}>Recent Activity</div>
+                <p style={{ margin: 0, fontSize: 14, color: C.muted }}>Global orchestration and system optimization</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end', marginTop: 10 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: C.green, boxShadow: `0 0 10px ${C.green}` }} />
+                  <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>System Online</span>
+                </div>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
-                <span style={{ fontSize: 20, fontWeight: 700, color: '#e8e8ec' }}>Maestro</span>
-                <span style={{ fontSize: 24 }}>⚡</span>
-              </div>
-              <div style={{ fontSize: 13, color: '#8b8fa4', marginTop: 4 }}>{masterAgent.description}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
-                <span style={{ fontSize: 12, color: '#34d399' }}>Always Active</span>
-                <div style={{
-                  width: 8, height: 8, borderRadius: '50%', background: '#34d399',
-                  boxShadow: '0 0 8px #34d399'
-                }} />
-              </div>
-            </div>
+          )}
+
+          {/* Specialized Agents Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+            {otherAgents.map(agent => {
+              const meta = AGENT_META[agent.name] || { icon: Bot, color: C.blue, bg: C.surface }
+              const isRunning = triggering === agent.name
+
+              return (
+                <div key={agent.id || agent.name} style={{
+                  background: C.surface, borderRadius: 16, padding: 20,
+                  border: `1px solid ${agent.isActive ? meta.color + '44' : C.border}`,
+                  opacity: agent.isActive ? 1 : 0.6,
+                  transition: 'all 0.3s',
+                  position: 'relative', overflow: 'hidden'
+                }}>
+                  {/* Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ background: agent.isActive ? meta.bg : C.border, padding: 8, borderRadius: 10, color: agent.isActive ? meta.color : C.muted }}>
+                        <meta.icon size={20} />
+                      </div>
+                      <h3 style={{ margin: 0, fontSize: 16, color: C.text, fontWeight: 600 }}>{agent.displayName}</h3>
+                    </div>
+                    
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button 
+                        onClick={() => triggerAgent(agent.name)}
+                        disabled={!agent.isActive || isRunning}
+                        title="Run Agent Now"
+                        style={{
+                          background: isRunning ? 'transparent' : C.card, border: `1px solid ${C.border}`,
+                          color: isRunning ? C.accent : C.text, borderRadius: 8, width: 32, height: 32,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: (!agent.isActive || isRunning) ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {isRunning ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={14} />}
+                      </button>
+                      <button
+                        onClick={() => toggleAgent(agent.name, agent.isActive)}
+                        title={agent.isActive ? 'Pause Agent' : 'Activate Agent'}
+                        style={{
+                          background: agent.isActive ? meta.color : C.card,
+                          border: `1px solid ${agent.isActive ? meta.color : C.border}`,
+                          color: agent.isActive ? '#000' : C.muted, borderRadius: 8, width: 32, height: 32,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
+                        }}
+                      >
+                        {agent.isActive ? <Check size={16} /> : <X size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <p style={{ margin: 0, fontSize: 13, color: C.muted, minHeight: 40, lineHeight: 1.5 }}>
+                    {agent.description}
+                  </p>
+
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 12, color: C.dim }}>
+                      {agent.recentLogs?.length > 0 
+                        ? `Last run: ${new Date(agent.recentLogs[0].timestamp).toLocaleTimeString()}`
+                        : 'No recent activity'}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: agent.isActive ? meta.color : C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                      {agent.automationLevel}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
-      )}
 
-      {/* باقي الإيجنتات */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-        gap: 16
-      }}>
-        {otherAgents.map(agent => {
-          const meta = AGENT_META[agent.name] || { icon: '🤖', color: '#60a5fa' };
-          const autoLabel = AUTOMATION_LABELS[agent.automationLevel];
+        {/* Sidebar: Recommendations (Alerts) */}
+        <div style={{ background: C.surface, borderRadius: 20, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 600 }}>
+          <div style={{ padding: '24px 24px 16px', borderBottom: `1px solid ${C.border}` }}>
+            <h3 style={{ margin: 0, fontSize: 16, color: C.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Lightbulb size={18} color={C.yellow} />
+              AI Recommendations
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: C.muted }}>Actionable insights from your agents</p>
+          </div>
 
-          return (
-            <div key={agent.id || agent.agentName} style={{
-              background: '#1a1d26', borderRadius: 16, padding: 20,
-              border: `1px solid ${agent.isActive ? meta.color + '33' : '#2a2d3a'}`,
-              opacity: agent.isActive ? 1 : 0.6,
-              transition: 'all 0.3s',
-              cursor: 'pointer',
-            }}
-              onClick={() => setSelectedAgent(selectedAgent?.name === agent.name ? null : agent)}
-            >
-              {/* الهيدر */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                {/* Toggle */}
-                <div
-                  onClick={(e) => { e.stopPropagation(); toggleAgent(agent.name, agent.isActive); }}
-                  style={{
-                    width: 44, height: 24, borderRadius: 12, cursor: 'pointer',
-                    background: agent.isActive ? meta.color : '#2a2d3a',
-                    position: 'relative', transition: 'background 0.3s',
-                  }}
-                >
-                  <div style={{
-                    width: 18, height: 18, borderRadius: '50%', background: '#fff',
-                    position: 'absolute', top: 3,
-                    right: agent.isActive ? 3 : 'auto',
-                    left: agent.isActive ? 'auto' : 3,
-                    transition: 'all 0.3s',
-                  }} />
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontWeight: 600, color: '#e8e8ec', fontSize: 15 }}>{agent.displayName}</span>
-                  <span style={{ fontSize: 20 }}>{meta.icon}</span>
-                </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {recommendations.length === 0 ? (
+              <div style={{ textAlign: 'center', color: C.dim, marginTop: 40 }}>
+                <Check size={40} style={{ opacity: 0.2, marginBottom: 16 }} />
+                <p style={{ margin: 0 }}>You're all caught up!</p>
+                <p style={{ margin: '4px 0 0', fontSize: 13 }}>No new recommendations.</p>
               </div>
+            ) : (
+              recommendations.map(rec => {
+                const isError = rec.type === 'error' || rec.severity === 'high'
+                const isWarn = rec.type === 'warning' || rec.severity === 'medium'
+                const color = isError ? C.red : isWarn ? C.orange : C.blue
 
-              {/* الوصف */}
-              <div style={{ fontSize: 13, color: '#8b8fa4', textAlign: 'right', marginBottom: 16, minHeight: '40px' }}>
-                {agent.description}
-              </div>
-
-              {/* مستوى الأتمتة */}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 16 }}>
-                {['full', 'semi', 'manual'].map(level => (
-                  <button key={level}
-                    onClick={(e) => { e.stopPropagation(); changeAutomation(agent.name, level); }}
-                    style={{
-                      padding: '4px 12px', borderRadius: 8, fontSize: 11, cursor: 'pointer',
-                      border: `1px solid ${agent.automationLevel === level ? AUTOMATION_LABELS[level].color : '#2a2d3a'}`,
-                      background: agent.automationLevel === level ? AUTOMATION_LABELS[level].color + '22' : 'transparent',
-                      color: agent.automationLevel === level ? AUTOMATION_LABELS[level].color : '#5a5e72',
-                    }}
-                  >
-                    {AUTOMATION_LABELS[level].label}
-                  </button>
-                ))}
-              </div>
-
-              {/* حالة */}
-              <div style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                paddingTop: 12, borderTop: '1px solid #2a2d3a22'
-              }}>
-                <span style={{ fontSize: 12, color: '#5a5e72' }}>
-                  {(agent.logs?.length || agent.recentLogs?.length) ? 'Recently updated' : 'No activity yet'}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: agent.isActive ? '#34d399' : '#f87171' }}>
-                    {agent.isActive ? 'Active' : 'Paused'}
-                  </span>
-                  <div style={{
-                    width: 6, height: 6, borderRadius: '50%',
-                    background: agent.isActive ? '#34d399' : '#f87171',
-                    boxShadow: agent.isActive ? '0 0 6px #34d399' : 'none',
-                  }} />
-                </div>
-              </div>
-
-              {/* تفاصيل موسّعة عند الضغط */}
-              {selectedAgent?.name === agent.name && (
-                <div style={{
-                  marginTop: 16, paddingTop: 16, borderTop: '1px solid #2a2d3a',
-                }}>
-                  <div style={{ fontSize: 13, color: '#8b8fa4', marginBottom: 8, textAlign: 'left' }}>Recent activity:</div>
-                  {(agent.logs || agent.recentLogs)?.length > 0 ? (agent.logs || agent.recentLogs).slice(0, 5).map((log, i) => (
-                    <div key={i} style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '6px 0', borderBottom: i < 4 ? '1px solid #2a2d3a11' : 'none',
-                    }}>
-                      <span style={{ fontSize: 11, color: '#5a5e72' }}>
-                        {log.timestamp ? new Date(log.timestamp).toLocaleString('en-US') : new Date().toLocaleString('en-US')}
-                      </span>
-                      <span style={{
-                        fontSize: 12,
-                        color: log.status === 'success' ? '#34d399' : log.status === 'error' ? '#f87171' : '#8b8fa4'
-                      }}>
-                        {log.message || log.action}
+                return (
+                  <div key={rec.id} style={{ 
+                    background: C.card, borderRadius: 12, border: `1px solid ${color}44`,
+                    padding: 16, borderLeft: `3px solid ${color}`
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                      <h4 style={{ margin: 0, fontSize: 14, color: C.text, fontWeight: 600, lineHeight: 1.4 }}>{rec.title}</h4>
+                      <span style={{ fontSize: 10, background: C.bg, padding: '2px 6px', borderRadius: 10, color: C.muted, textTransform: 'uppercase' }}>
+                        {rec.agentName}
                       </span>
                     </div>
-                  )) : (
-                    <div style={{ fontSize: 12, color: '#5a5e72', textAlign: 'center', padding: 12 }}>
-                      No recorded activity yet
+                    
+                    <p style={{ margin: '0 0 16px 0', fontSize: 13, color: C.muted, lineHeight: 1.5, whiteSpace: 'pre-line' }}>
+                      {rec.message}
+                    </p>
+
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button 
+                        onClick={() => handleRecommendation(rec.id, 'apply')}
+                        style={{ flex: 1, padding: '8px 0', background: `${color}22`, color: color, border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Apply Suggestion
+                      </button>
+                      <button 
+                        onClick={() => handleRecommendation(rec.id, 'dismiss')}
+                        style={{ width: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: C.muted, border: `1px solid ${C.border}`, borderRadius: 8, cursor: 'pointer' }}
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
       </div>
+
     </div>
-  );
+  )
 }

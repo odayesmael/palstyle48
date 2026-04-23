@@ -25,8 +25,8 @@ async function getSettings(_req, res) {
     
     // Merge DB values over defaults
     const finalSettings = { ...defaults, ...result }
-    
-    return res.json(finalSettings)
+
+    return res.json({ success: true, settings: finalSettings })
   } catch (err) {
     console.error('[Settings/getSettings]', err)
     return res.status(500).json({ error: err.message })

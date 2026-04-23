@@ -3,22 +3,36 @@
  * Unified interface for switching between Groq and Ollama with Fallback Chain
  */
 
+const OpenAIService = require('./openai.service')
 const GroqService = require('./groq.service')
 const OllamaService = require('./ollama.service')
 
 class AIProvider {
   constructor(options = {}) {
+    this.openai = new OpenAIService(options.openaiKey || process.env.OPENAI_API_KEY)
     this.groq = new GroqService(options.apiKey || process.env.GROQ_API_KEY)
     this.ollama = new OllamaService(options.ollamaUrl || process.env.OLLAMA_BASE_URL)
   }
 
   /**
    * Helper internally to execute the fallback chain
+   * Order: OpenAI (primary) → Groq → Ollama
    */
   async _executeWithFallback(actionName, payload, options) {
     let lastError = null;
 
-    // 1. Try Groq (Primary)
+    // 1. Try OpenAI (Primary — GPT-4o)
+    if (this.openai.isAvailable()) {
+      try {
+        console.log(`[AIProvider] Attempting ${actionName} via OpenAI...`)
+        return await this.openai.chat(payload, options)
+      } catch (err) {
+        console.warn(`[AIProvider] OpenAI failed for ${actionName}:`, err.message)
+        lastError = err;
+      }
+    }
+
+    // 2. Try Groq (Secondary)
     try {
       console.log(`[AIProvider] Attempting ${actionName} via Groq...`)
       return await this.groq.chat(payload, options)
@@ -27,7 +41,7 @@ class AIProvider {
       lastError = err;
     }
 
-    // 2. Try Ollama (Secondary)
+    // 3. Try Ollama (Tertiary — local)
     try {
       console.log(`[AIProvider] Attempting ${actionName} via Ollama fallback...`)
       const isAvailable = await this.ollama.isAvailable()
@@ -40,8 +54,7 @@ class AIProvider {
       lastError = err;
     }
 
-    // 3. Complete Failure - Send Alert 
-    // TODO: integrate with an alert system to notify Admin.
+    // 4. Complete Failure
     const finalError = new Error(`[AIProvider] All providers failed for ${actionName}. Last Error: ${lastError.message}`)
     console.error(finalError.message)
     throw finalError
